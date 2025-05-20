@@ -7,16 +7,16 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:camera/camera.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:contacts_service/contacts_service.dart';
+import 'package:crypto/crypto.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:installed_apps/installed_apps.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:package_info_plus/package_info_plus.dart';
-import 'package:crypto/crypto.dart';
 
 import '../camera/camera_service.dart';
 import '../location/location_service.dart';

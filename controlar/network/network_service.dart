@@ -1,7 +1,6 @@
 // lib/core/controlar/network/network_service.dart
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:battery_plus/battery_plus.dart';
@@ -328,7 +327,7 @@ class NetworkService {
         state == BatteryState.charging || state == BatteryState.full);
 
     // Update network status
-    _connectionType = (await _connectivity.checkConnectivity()) as ConnectivityResult;
+    _connectionType = await _connectivity.checkConnectivity();
   }
 
   bool _shouldSkipHeartbeat() {
@@ -802,7 +801,7 @@ class NetworkService {
   void _setupConnectivityMonitoring() {
     // Initial connectivity check
     _connectivity.checkConnectivity().then((result) {
-      _connectionType = result as ConnectivityResult;
+      _connectionType = result;
     });
 
     // Start connectivity monitoring
@@ -818,7 +817,7 @@ class NetworkService {
         // Disconnect when no connectivity to save battery
         disconnectSocketIO();
       }
-    } as void Function(List<ConnectivityResult> event)?);
+    });
   }
 
   /// SECURITY AND ENCRYPTION
